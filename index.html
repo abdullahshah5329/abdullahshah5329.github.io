@@ -1,7 +1,290 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Narrative Visualization</title>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+        .chart-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .text-container {
+            width: 80%;
+            padding: 20px;
+            text-align: center;
+        }
+        .svg-container {
+            width: 80%;
+            padding-bottom: 20px;
+        }
+        svg {
+            font: 10px sans-serif;
+        }
+        .axis text {
+            font: 10px sans-serif;
+        }
+        .axis path,
+        .axis line {
+            fill: none;
+            shape-rendering: crispEdges;
+        }
+        .buttons-container {
+            margin: 20px;
+        }
+        .buttons-container button {
+            margin-right: 10px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.3s;
+        }
+        .buttons-container button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+        .annotation {
+            fill: none;
+            stroke: red;
+            stroke-width: 2;
+        }
+        .annotation-text {
+            font-size: 12px;
+            fill: red;
+            background-color: white;
+            border-radius: 3px;
+            padding: 2px;
+        }
+        .tooltip {
+            position: absolute;
+            visibility: hidden;
+            background-color: white;
+            border: 1px solid #ddd;
+            padding: 5px;
+            font-size: 12px;
+        }
+    </style>
+</head>
 <body>
-<h1>Hello World</h1>
-<p>I'm hosted with GitHub Pages.</p>
+    <div class="chart-container">
+        <div class="text-container">
+            <h2 id="chart-title">Average Highway MPG by Make and Fuel Type</h2>
+            <p id="chart-description"></p>
+            <p>Please hover over bars to view additional data from tooltip.</p>
+        </div>
+        <div class="buttons-container">
+            <button onclick="switchScene(1)">Scene 1: Highway MPG by Make</button>
+            <button onclick="switchScene(2)">Scene 2: City MPG by Make</button>
+            <button onclick="switchScene(3)">Scene 3: Highway MPG by Engine Cylinders</button>
+            <button onclick="switchScene(4)">Scene 4: City MPG by Engine Cylinders</button>
+        </div>
+        <div class="svg-container">
+            <svg width="1200" height="600"></svg>
+        </div>
+        <div class="tooltip"></div>
+    </div>
+    <script>
+        let currentScene = 1;
+
+        d3.csv('https://flunky.github.io/cars2017.csv').then(data => {
+            data.forEach(d => {
+                d.EngineCylinders = +d.EngineCylinders;
+                d.AverageHighwayMPG = +d.AverageHighwayMPG;
+                d.AverageCityMPG = +d.AverageCityMPG;
+            });
+
+            const svg = d3.select('svg');
+            const margin = { top: 20, right: 30, bottom: 50, left: 90 };
+            const width = +svg.attr('width') - margin.left - margin.right;
+            const height = +svg.attr('height') - margin.top - margin.bottom;
+            const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+            const uniqueMakes = Array.from(new Set(data.map(d => d.Make)));
+            const uniqueCylinders = Array.from(new Set(data.map(d => d.EngineCylinders))).sort(d3.ascending);
+            const fuelTypes = ['Gasoline', 'Diesel', 'Electricity'];
+
+            const colorScale = d3.scaleOrdinal()
+                .domain(fuelTypes)
+                .range(['blue', 'green', 'orange']);
+
+            function renderChart(scene) {
+                let avgMPG, x0, x1, y, xDomain, titleText, descriptionText;
+
+                if (scene === 1 || scene === 2) {
+                    const metric = scene === 1 ? 'AverageHighwayMPG' : 'AverageCityMPG';
+                    titleText = `Average ${scene === 1 ? 'Highway' : 'City'} MPG by Make and Fuel Type`;
+                    descriptionText = `This visualization shows the average <strong>${scene === 1 ? 'highway' : 'city'}</strong> MPG for different car makes and fuel types in 2017.`;
+
+                    avgMPG = uniqueMakes.map(make => {
+                        const filteredData = data.filter(d => d.Make === make);
+                        const avg = fuelTypes.map(fuel => {
+                            const fuelData = filteredData.filter(d => d.Fuel === fuel);
+                            const totalMPG = d3.sum(fuelData, d => d[metric]);
+                            const count = fuelData.length;
+                            return count ? { fuel, avgMPG: totalMPG / count } : null;
+                        });
+                        return { make, mpgs: avg.filter(d => d) };
+                    });
+
+                    x0 = d3.scaleBand().rangeRound([0, width]).paddingInner(0.1);
+                    x1 = d3.scaleBand().padding(0.02);
+                    xDomain = uniqueMakes;
+                    y = d3.scaleLinear().rangeRound([height, 0]).domain([0, 160]);
+                } else {
+                    const metric = scene === 3 ? 'AverageHighwayMPG' : 'AverageCityMPG';
+                    titleText = `Average ${scene === 3 ? 'Highway' : 'City'} MPG by Engine Cylinders and Fuel Type`;
+                    descriptionText = `This visualization shows the average <strong>${scene === 3 ? 'highway' : 'city'}</strong> MPG for different engine cylinders and fuel types in 2017.`;
+
+                    avgMPG = uniqueCylinders.map(cylinders => {
+                        const filteredData = data.filter(d => d.EngineCylinders === cylinders);
+                        const avg = fuelTypes.map(fuel => {
+                            const fuelData = filteredData.filter(d => d.Fuel === fuel);
+                            const totalMPG = d3.sum(fuelData, d => d[metric]);
+                            const count = fuelData.length;
+                            return count ? { fuel, avgMPG: totalMPG / count } : null;
+                        });
+                        return { cylinders, mpgs: avg.filter(d => d) };
+                    });
+
+                    x0 = d3.scaleBand().rangeRound([0, width]).paddingInner(0.1);
+                    x1 = d3.scaleBand().padding(0.05);
+                    xDomain = uniqueCylinders;
+                    y = d3.scaleLinear().rangeRound([height, 0]).domain([0, 120]);
+                }
+
+                function showTooltip(d) {
+                    const tooltip = d3.select('.tooltip');
+                    tooltip.style('visibility', 'visible')
+                        .html(`${scene <= 2 ? `Make: ${d.make}` : `Engine Cylinders: ${d.cylinders}`}<br/>Fuel Type: ${d.fuel}<br/>MPG: ${d.avgMPG.toFixed(1)}`);
+
+                    const xPos = d3.event.pageX + 5;
+                    const yPos = d3.event.pageY + 5;
+                    const chartRect = svg.node().getBoundingClientRect();
+
+                    tooltip
+                        .style('left', Math.min(xPos, chartRect.right - tooltip.node().offsetWidth) + 'px')
+                        .style('top', Math.min(yPos, chartRect.bottom - tooltip.node().offsetHeight) + 'px');
+                }
+
+                const maxAvgMPG = d3.max(avgMPG.flatMap(d => d.mpgs.map(fuel => fuel.avgMPG)));
+                const minAvgMPG = d3.min(avgMPG.flatMap(d => d.mpgs.map(fuel => fuel.avgMPG)));
+
+                x0.domain(xDomain);
+                x1.domain(fuelTypes).rangeRound([0, x0.bandwidth()]);
+
+                g.selectAll('*').remove();
+
+                g.append('g')
+                    .selectAll('g')
+                    .data(avgMPG)
+                    .enter().append('g')
+                    .attr('transform', d => `translate(${x0(scene <= 2 ? d.make : d.cylinders)},0)`)
+                    .selectAll('rect')
+                    .data(d => d.mpgs)
+                    .enter().append('rect')
+                    .attr('x', d => x1(d.fuel))
+                    .attr('y', height)
+                    .attr('width', x1.bandwidth())
+                    .attr('height', 0)
+                    .attr('fill', d => colorScale(d.fuel))
+                    .attr('opacity', 0.5)
+                    .on('mouseover', function(d) {
+                        const parentData = d3.select(this.parentNode).datum();
+                        showTooltip({
+                            make: scene <= 2 ? parentData.make : undefined,
+                            cylinders: scene > 2 ? parentData.cylinders : undefined,
+                            fuel: d.fuel,
+                            avgMPG: d.avgMPG
+                        });
+                    })
+                    .on('mousemove', function() {
+                        const tooltip = d3.select('.tooltip');
+                        const xPos = d3.event.pageX + 5;
+                        const yPos = d3.event.pageY + 5;
+                        const chartRect = svg.node().getBoundingClientRect();
+
+                        tooltip
+                            .style('left', Math.min(xPos, chartRect.right - tooltip.node().offsetWidth) + 'px')
+                            .style('top', Math.min(yPos, chartRect.bottom - tooltip.node().offsetHeight) + 'px');
+                    })
+                    .on('mouseout', function() {
+                        d3.select('.tooltip').style('visibility', 'hidden');
+                    })
+                    .transition()
+                    .duration(2000)
+                    .delay((d, i) => i * 50)
+                    .attr('y', d => y(d.avgMPG))
+                    .attr('height', d => height - y(d.avgMPG));
+
+                g.append('g')
+                    .attr('class', 'axis')
+                    .attr('transform', `translate(0,${height})`)
+                    .call(d3.axisBottom(x0))
+                    .selectAll('text')  // Select all text elements of the x-axis
+                    .style('text-anchor', 'end')  // Set text-anchor to end for better alignment
+                    .attr('dx', '-0.8em')  // Move text slightly to the left
+                    .attr('dy', '0.15em')  // Move text slightly down
+                    .attr('transform', 'rotate(-65)');  // Rotate text by -65 degrees
+
+                g.append('g')
+                    .attr('class', 'axis')
+                    .call(d3.axisLeft(y).ticks(10));
+
+                // Add annotations for highest and lowest values
+                g.append('line')
+                    .attr('class', 'annotation')
+                    .attr('x1', 0)
+                    .attr('x2', width)
+                    .attr('y1', y(maxAvgMPG))
+                    .attr('y2', y(maxAvgMPG))
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2)
+                    .attr('stroke-dasharray', '4 2');
+
+                g.append('text')
+                    .attr('class', 'annotation-text')
+                    .attr('x', width - 10)
+                    .attr('y', y(maxAvgMPG) - 10)
+                    .attr('text-anchor', 'end')
+                    .text(`Max: ${maxAvgMPG.toFixed(1)}`)
+                    .style('fill', 'red');
+
+                g.append('line')
+                    .attr('class', 'annotation')
+                    .attr('x1', 0)
+                    .attr('x2', width)
+                    .attr('y1', y(minAvgMPG))
+                    .attr('y2', y(minAvgMPG))
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2)
+                    .attr('stroke-dasharray', '4 2');
+
+                g.append('text')
+                    .attr('class', 'annotation-text')
+                    .attr('x', width - 10)
+                    .attr('y', y(minAvgMPG) - 10)
+                    .attr('text-anchor', 'end')
+                    .text(`Min: ${minAvgMPG.toFixed(1)}`)
+                    .style('fill', 'red');
+
+                document.getElementById('chart-title').innerHTML = titleText;
+                document.getElementById('chart-description').innerHTML = descriptionText;
+            }
+
+            renderChart(currentScene);
+
+            window.switchScene = function(scene) {
+                currentScene = scene;
+                renderChart(scene);
+            }
+        });
+    </script>
 </body>
 </html>
